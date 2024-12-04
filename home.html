@@ -1,0 +1,201 @@
+<html><head></head><body>import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-app.js";
+import { getDatabase, ref, push, onValue, update } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-database.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyD2i7QSJMpN_GUH44s6FCa4FPd4CcacjQU",
+  authDomain: "aslaa-aadd9.firebaseapp.com",
+  databaseURL: "https://aslaa-aadd9-default-rtdb.firebaseio.com",
+  projectId: "aslaa-aadd9",
+  storageBucket: "aslaa-aadd9.firebasestorage.app",
+  messagingSenderId: "862690377553",
+  appId: "1:862690377553:web:1addb4ee0d8b4a5f589d70",
+  measurementId: "G-RKNKL008R3"
+};
+
+const app = initializeApp(firebaseConfig);
+const database = getDatabase(app);
+
+const loggedIn = localStorage.getItem('loggedIn');
+const username = localStorage.getItem('username');
+
+if (!loggedIn || !username) {
+  alert('خطأ: يجب تسجيل الدخول للوصول إلى هذه الصفحة.');
+  window.location.href = 'login.html';
+}
+
+const postButton = document.getElementById('postButton');
+const postContent = document.getElementById('postContent');
+const postsContainer = document.getElementById('postsContainer');
+
+postButton.addEventListener('click', () =&gt; {
+  const content = postContent.value.trim();
+  if (content === '') {
+    alert('المنشور لا يمكن أن يكون فارغاً!');
+    return;
+  }
+
+  const postRef = ref(database, 'posts');
+  const timestamp = new Date().toISOString();
+  push(postRef, { username, content, timestamp, likes: 0, dislikes: 0, reactions: {}, reports: [] });
+
+  postContent.value = '';
+});
+
+const postsRef = ref(database, 'posts');
+onValue(postsRef, (snapshot) =&gt; {
+  const posts = [];
+  snapshot.forEach((childSnapshot) =&gt; {
+    const key = childSnapshot.key;
+    const postData = childSnapshot.val();
+    posts.push({ key, ...postData });
+  });
+
+  posts.sort((a, b) =&gt; new Date(b.timestamp) - new Date(a.timestamp));
+
+  postsContainer.innerHTML = '';
+  posts.forEach((postData) =&gt; {
+    const postElement = document.createElement('div');
+    postElement.classList.add('post');
+
+    const usernameElement = document.createElement('div');
+    usernameElement.classList.add('username');
+    usernameElement.textContent = postData.username;
+
+    const contentElement = document.createElement('div');
+    contentElement.textContent = postData.content;
+
+    const timestampElement = document.createElement('div');
+    const timestamp = new Date(postData.timestamp);
+    timestampElement.classList.add('timestamp');
+    timestampElement.textContent = `منذ ${getTimeAgo(timestamp)}`;
+
+    const actionButtons = document.createElement('div');
+    actionButtons.classList.add('action-buttons');
+
+    const hasLiked = postData.reactions?.[username] === 'like';
+    const hasDisliked = postData.reactions?.[username] === 'dislike';
+
+    const likeButton = document.createElement('button');
+    likeButton.classList.add('like-button');
+    likeButton.innerHTML = `👍 ${postData.likes} ${hasLiked ? '(إلغاء الإعجاب)' : ''}`;
+    likeButton.addEventListener('click', () =&gt; {
+      const postRef = ref(database, `posts/${postData.key}`);
+      const reactionsRef = ref(database, `posts/${postData.key}/reactions`);
+      if (hasLiked) {
+        update(postRef, {
+          likes: postData.likes - 1,
+          [`reactions/${username}`]: null
+        });
+      } else {
+        update(postRef, {
+          likes: postData.likes + 1,
+          dislikes: hasDisliked ? postData.dislikes - 1 : postData.dislikes,
+          [`reactions/${username}`]: 'like'
+        });
+      }
+    });
+
+    const dislikeButton = document.createElement('button');
+    dislikeButton.classList.add('dislike-button');
+    dislikeButton.innerHTML = `👎 ${postData.dislikes} ${hasDisliked ? '(إلغاء عدم الإعجاب)' : ''}`;
+    dislikeButton.addEventListener('click', () =&gt; {
+      const postRef = ref(database, `posts/${postData.key}`);
+      const reactionsRef = ref(database, `posts/${postData.key}/reactions`);
+      if (hasDisliked) {
+        update(postRef, {
+          dislikes: postData.dislikes - 1,
+          [`reactions/${username}`]: null
+        });
+      } else {
+        update(postRef, {
+          dislikes: postData.dislikes + 1,
+          likes: hasLiked ? postData.likes - 1 : postData.likes,
+          [`reactions/${username}`]: 'dislike'
+        });
+      }
+    });
+
+    const reportButton = document.createElement('button');
+    reportButton.classList.add('report-button');
+    reportButton.innerHTML = 'إبلاغ';
+    reportButton.addEventListener('click', () =&gt; {
+      const postRef = ref(database, `posts/${postData.key}/reports`);
+      push(postRef, { username, reason: 'محتوى غير مناسب' });
+    });
+
+    const viewReactorsButton = document.createElement('button');
+    viewReactorsButton.classList.add('view-reactors-button');
+    viewReactorsButton.innerHTML = 'عرض المتفاعلين';
+    viewReactorsButton.addEventListener('click', () =&gt; {
+      const reactionsRef = ref(database, `posts/${postData.key}/reactions`);
+      onValue(reactionsRef, (snapshot) =&gt; {
+        const reactors = snapshot.val();
+        const reactorsList = document.createElement('div');
+        reactorsList.classList.add('reactions-list');
+        if (reactors) {
+          const likes = [];
+          const dislikes = [];
+          Object.keys(reactors).forEach((reactor) =&gt; {
+            if (reactors[reactor] === 'like') {
+              likes.push(reactor);
+            } else if (reactors[reactor] === 'dislike') {
+              dislikes.push(reactor);
+            }
+          });
+
+          if (likes.length &gt; 0) {
+            const likeHeading = document.createElement('span');
+            likeHeading.textContent = 'أعجبوا بالمنشور:';
+            reactorsList.appendChild(likeHeading);
+            likes.forEach((like) =&gt; {
+              const likeElement = document.createElement('span');
+              likeElement.textContent = like;
+              reactorsList.appendChild(likeElement);
+            });
+          }
+
+          if (dislikes.length &gt; 0) {
+            const dislikeHeading = document.createElement('span');
+            dislikeHeading.textContent = 'لم يعجبهم المنشور:';
+            reactorsList.appendChild(dislikeHeading);
+            dislikes.forEach((dislike) =&gt; {
+              const dislikeElement = document.createElement('span');
+              dislikeElement.textContent = dislike;
+              reactorsList.appendChild(dislikeElement);
+            });
+          }
+        } else {
+          const noReactions = document.createElement('span');
+          noReactions.textContent = 'لا توجد تفاعلات بعد.';
+          reactorsList.appendChild(noReactions);
+        }
+        postElement.appendChild(reactorsList);
+      });
+    });
+
+    actionButtons.appendChild(likeButton);
+    actionButtons.appendChild(dislikeButton);
+    actionButtons.appendChild(reportButton);
+    actionButtons.appendChild(viewReactorsButton);
+
+    postElement.appendChild(usernameElement);
+    postElement.appendChild(contentElement);
+    postElement.appendChild(timestampElement);
+    postElement.appendChild(actionButtons);
+    postsContainer.appendChild(postElement);
+  });
+});
+
+function getTimeAgo(timestamp) {
+  const diff = new Date() - timestamp;
+  const seconds = Math.floor(diff / 1000);
+  const minutes = Math.floor(seconds / 60);
+  const hours = Math.floor(minutes / 60);
+  const days = Math.floor(hours / 24);
+
+  if (days &gt; 0) return `${days} يوم${days &gt; 1 ? 'ان' : ''} مضت`;
+  if (hours &gt; 0) return `${hours} ساعة${hours &gt; 1 ? 'ات' : ''} مضت`;
+  if (minutes &gt; 0) return `${minutes} دقيقة${minutes &gt; 1 ? 'ات' : ''} مضت`;
+  return `${seconds} ثانية${seconds &gt; 1 ? 'ات' : ''} مضت`;
+}
+</body></html>
